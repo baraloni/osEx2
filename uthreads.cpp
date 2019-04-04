@@ -160,6 +160,7 @@ int uthread_resume(int tid)
 {
     if (manager.unBlockThread(tid) != -1)
     {
+        // TODO(NOY): Do it in a scheduler's function resume().
         if((tid != scheduler.getRunning()) && !(scheduler.inReady(tid))){
             scheduler.appendTid(tid);
         }
