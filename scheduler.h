@@ -10,29 +10,47 @@ class scheduler
 
 public:
 
+    /**
+     * Initializes a new scheduler object with an empty ready queue and _running=0.
+     */
+    scheduler();
 
     /**
-     * appends this tid to the end of the _ready queue.
+     * Decides who will be the next thread to run in the case the thread with tid got blocked. This method also
+     * updates the scheduler's internal state according to the decision, and sets _running and ready accordingly.
+     * @return the next tid to run.
      */
+    int whosNextBlock(int tid);
+
+    /**
+     * Decides who will be the next thread to run in the case of a timeout. This method also
+     * updates the scheduler's internal state according to the decision, and sets _running and ready accordingly.
+     * @return the next tid to run.
+     */
+    int whosNextTimeout();
+
+    /**
+     * Decides who will be the next thread to run in the case the thread with this tid has terminated. This method also
+     * updates the scheduler's internal state according to the decision, and sets _running and ready accordingly.
+     * @return the next tid to run.
+     */
+    int whosNextTermination(int tid);
+
+    /**
+     * Decides who will be the next thread to run in the case the running should sleep. This method also
+     * updates the scheduler's internal state according to the decision, and sets _running and ready accordingly.
+     * @return the next tid to run.
+     */
+    int whosNextSleep();
+
+    /**
+     * Returns true if the thread with this tid is in _ready.
+     * @param tid
+     * @return
+     */
+    bool inReady(int tid);
+
     void appendTid(int tid);
-
-    /**
-     * Decides which thread is the next to run.
-     * @return The relevant tid.
-     */
-    int whoRunsNext();
-
-    /**
-     * Updates the internal state of the scheduler in the case a switch occured.
-     * @return
-     */
-    void switchThreads();
-
-    /**
-     * Removes the thread with this tid from ready.
-     * @return
-     */
-    int removeFromReady(int tid);
 
     /**
      * Returns which thread in is the CPU right now.
