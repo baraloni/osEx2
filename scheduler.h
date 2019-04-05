@@ -8,6 +8,18 @@ class scheduler
     std::list<int> _ready;
     int _running;
 
+    /**
+     * Pops the next thread to run from _ready and puts it in _running.
+     */
+    void _replaceRunning();
+
+    /**
+     * The treatment of blocking or termination from the scheduler's point of view is the same. This function updates
+     * the internal state of the scheduler in either case.
+     */
+    void _handleBlockOrTermination(int tid);
+
+
 public:
 
     /**
@@ -44,20 +56,31 @@ public:
     int whosNextSleep();
 
     /**
+     * Adds a thread to _ready if it's not already there.
+     * @param tid
+     */
+     void addThread(int tid);
+
+     /**
+    * Returns which thread in is the CPU right now.
+    * @return The id of the running thread.
+    */
+    int getRunning();
+
+     /**
+    * Prints the _ready list (for tests)
+    */
+    void printReady();
+
+    // TO DELETE:
+    void appendTid(int tid);
+
+    /**
      * Returns true if the thread with this tid is in _ready.
      * @param tid
      * @return
      */
     bool inReady(int tid);
-
-    void appendTid(int tid);
-
-    /**
-     * Returns which thread in is the CPU right now.
-     * @return The id of the running thread.
-     */
-    int getRunning();
-
 };
 
 
