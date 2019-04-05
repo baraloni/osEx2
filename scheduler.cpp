@@ -6,9 +6,7 @@
 #include "scheduler.h"
 
 /*------------- CONSTRUCTORS ------------*/
-scheduler::scheduler(){
-    _running = 0;
-}
+scheduler::scheduler(): _running(MAIN_THREAD_ID) {}
 
 /*------------- PRIVATE -------------*/
 void scheduler::_replaceRunning() {
