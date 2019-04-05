@@ -1,24 +1,16 @@
-// ISSUES & UPDATES:
-// 1) Why .Hpp?
-// 2) Why Implement things in the header?
-// 3) uthread_init: we shouldn't initialize the main thread, it is already exists: https://moodle2.cs.huji.ac.il/nu18/mod/forum/discuss.php?d=44535
-//    The scheduler should be created when _running is already 0, and the manager should contain thread 0 from the beginning.
-// 4) I massively changed scheduler: we had several problems since block, termination, sleep and timeout are different
-//    cases that require different treatment, which the older API didn't allow.
-// 5) I updated Terminate, block according to the new scheduler API.
-// 6) Fixed bug in uthread_resume.
-
 // TASKS:
 // TODO: Protect critical code
-// TODO: Implement timer mechanizem.
-// TODO: Implement Switch in scheduler
+// TODO: Implement TIMER DECLARATION AND SETTING & HANDLER & totalQuants maintenance
 // TODO: Implement Switch in manager.
+// TODO: Take care of system errors.
+// TODO: Initialize classes properly and implement a function that frees the memory of the library.
 
 
 
 #include "uthreads.h"
 #include "thread_manager.h"
 #include "scheduler.h"
+#include "virtual_timer.h"
 
 #include <queue>
 #include <unordered_map>
@@ -30,14 +22,21 @@
 
 
 //-------------Static Globals:
-static thread_manager manager(0, MAX_THREAD_NUM, STACK_SIZE); // TODO: How to initialise it?
+static thread_manager manager(0, MAX_THREAD_NUM, STACK_SIZE);
 static scheduler scheduler;
+static virtual_timer vTimer(0);
 static int totalQuants = 0;
 
 //-------------Timer:
-//TODO: TIMER DECLARATION AND SETTING & HANDLER & totalQuants maintenance
-
-
+static void handleQuantumTimeout(){
+    // protect critical code
+    int nextToRun = scheduler.whosNextTimeout();
+    vTimer.zeroTimer();
+    // manager.switch(nextToRun);
+    vTimer.startTimer();
+    totalQuants++;
+    // remove critical code protection
+}
 
 //---------------------------------Library Functionality---------------------
 /*
@@ -52,11 +51,14 @@ int uthread_init(int quantum_usecs)
 {
     if (quantum_usecs >= 0)
     {
-        //create global functionality holders:
+        // Create global functionality holders:
         manager = thread_manager(quantum_usecs, MAX_THREAD_NUM, STACK_SIZE);
         scheduler = scheduler;
+        vTimer = virtual_timer(quantum_usecs);
 
-        // init timer
+        // Init timer & start the quantum counting:
+        vTimer.startTimer();
+        totalQuants++;
     }
     std::cerr << LIB_ERROR_SYNTAX << "quantum_usec should be non-negative." << std::endl;
     return -1;
@@ -108,14 +110,12 @@ int uthread_terminate(int tid)
             nextToRun = scheduler.whosNextTermination(tid);
             if(nextToRun != currRunning){                          // If we should do a context switch.
                 // manager.switch(nextToRun)
-                //TODO: Why should this function not return if the thread terminates itself?
             }
             return 0;
         }
         std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
         return -1;
     }
-    //TODO: release assigned memory if exists.
     exit(0);
 }
 
@@ -160,7 +160,6 @@ int uthread_resume(int tid)
 {
     if (manager.unBlockThread(tid) != -1)
     {
-        // TODO(NOY): Do it in a scheduler's function resume().
         if((tid != scheduler.getRunning()) && !(scheduler.inReady(tid))){
             scheduler.appendTid(tid);
         }

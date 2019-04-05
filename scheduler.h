@@ -3,6 +3,8 @@
 
 #include <list>
 
+static const int MAIN_THREAD_ID = 0;
+
 class scheduler
 {
     std::list<int> _ready;
