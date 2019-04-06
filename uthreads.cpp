@@ -1,9 +1,10 @@
 // TASKS:
 // TODO: Protect critical code
-// TODO: Implement TIMER DECLARATION AND SETTING & HANDLER & totalQuants maintenance
 // TODO: Implement Switch in manager.
 // TODO: Take care of system errors.
-// TODO: Initialize classes properly and implement a function that frees the memory of the library.
+// TODO: Initialize classes properly and implement a function that frees the memory of the library when needed.
+// TODO: Test memory allocations.
+// TODO: Fix thread's constructor.
 
 
 
@@ -15,6 +16,8 @@
 #include <queue>
 #include <unordered_map>
 #include <iostream>
+#include <signal.h>
+
 
 //-------------Error Massages:
 #define LIB_ERROR_SYNTAX "thread library error: "
@@ -22,20 +25,46 @@
 
 
 //-------------Static Globals:
+static struct sigaction sa = {0};
 static thread_manager manager(0, MAX_THREAD_NUM, STACK_SIZE);
 static scheduler scheduler;
 static virtual_timer vTimer(0);
 static int totalQuants = 0;
+static sigset_t toBlock;        // A set of signals to block where critical code is executed.
 
-//-------------Timer:
-static void handleQuantumTimeout(){
-    // protect critical code
+
+//-------------Masking:
+void maskSignals(){
+    if(sigprocmask(SIG_SETMASK, &toBlock, nullptr) < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to set signal masking." << std::endl;
+        exit(1);
+    }
+}
+
+void unmaskSignals(){
+    if(sigprocmask(SIG_UNBLOCK, &toBlock, nullptr) < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to undo signal masking." << std::endl;
+        exit(1);
+    }
+}
+
+//-------------Signal Handlers:
+// TODO: What should I do with sig?
+// TODO: Should I add protection to this code? (use sigprogmask? add mask to sigaction?)
+static void handleQuantumTimeout(int sig){
+    // Zero the _timer:
+    vTimer.zero();
+
+    // Do a context switch:
     int nextToRun = scheduler.whosNextTimeout();
-    vTimer.zeroTimer();
     // manager.switch(nextToRun);
-    vTimer.startTimer();
+
+    // Start the _timer again & update totalQuants:
+    if(vTimer.start() < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+        exit(1);
+    }
     totalQuants++;
-    // remove critical code protection
 }
 
 //---------------------------------Library Functionality---------------------
@@ -56,8 +85,25 @@ int uthread_init(int quantum_usecs)
         scheduler = scheduler;
         vTimer = virtual_timer(quantum_usecs);
 
-        // Init timer & start the quantum counting:
-        vTimer.startTimer();
+        // Initialize the signal set to block:
+        if(sigaddset(&toBlock, SIGVTALRM) < 0){
+            std::cerr << SYS_ERROR_SYNTAX << "Failed to initialize signal set to block." << std::endl;
+            exit(1);
+        }
+
+        // Set signal handlers:
+        sa.sa_handler = &handleQuantumTimeout;
+        sa.sa_flags = 0; // Verifies that no flags are applied.
+        if(sigaction(SIGVTALRM, &sa, nullptr) < 0){
+            std::cerr << SYS_ERROR_SYNTAX << "sigaction had failed." << std::endl;
+            exit(1);
+        }
+
+        // Start _timer & update the quantum counting:
+        if(vTimer.start() < 0){
+            std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+            exit(1);
+        }
         totalQuants++;
     }
     std::cerr << LIB_ERROR_SYNTAX << "quantum_usec should be non-negative." << std::endl;
