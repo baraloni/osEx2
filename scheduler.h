@@ -5,6 +5,9 @@
 
 static const int MAIN_THREAD_ID = 0;
 
+/**
+ * A scheduler is an object that decides which thread should run next in case a context switch occurs.
+ */
 class scheduler
 {
     std::list<int> _ready;

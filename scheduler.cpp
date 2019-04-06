@@ -1,8 +1,10 @@
-//TODO: Check system calls/ std library calls.
+// TODO: Should we put find in a try catch block?
 //TODO: delete inReady
 // TODO: delete appendTid
 
 #include <iostream>
+//#define NDEBUG
+#include <cassert>
 #include "scheduler.h"
 
 /*------------- CONSTRUCTORS ------------*/
@@ -10,6 +12,7 @@ scheduler::scheduler(): _running(MAIN_THREAD_ID) {}
 
 /*------------- PRIVATE -------------*/
 void scheduler::_replaceRunning() {
+    assert(!_ready.empty());
     _running = _ready.front();
     _ready.pop_front();
 }
