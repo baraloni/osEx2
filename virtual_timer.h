@@ -28,7 +28,7 @@ public:
     /**
      * Zeros the timer.
      */
-    void zero();
+    int zero();
 };
 
 

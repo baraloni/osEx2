@@ -1,4 +1,5 @@
 // TASKS:
+// TODO: SLEEP!
 // TODO: Protect critical code
 // TODO: Implement Switch in manager.
 // TODO: Take care of system errors.
@@ -53,7 +54,10 @@ void unmaskSignals(){
 // TODO: Should I add protection to this code? (use sigprogmask? add mask to sigaction?)
 static void handleQuantumTimeout(int sig){
     // Zero the _timer:
-    vTimer.zero();
+    if (vTimer.zero() < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
+        exit(1);
+    }
 
     // Do a context switch:
     int nextToRun = scheduler.whosNextTimeout();
@@ -155,7 +159,16 @@ int uthread_terminate(int tid)
         {
             nextToRun = scheduler.whosNextTermination(tid);
             if(nextToRun != currRunning){                          // If we should do a context switch.
+                if (vTimer.zero() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
+                    exit(1);
+                }
                 // manager.switch(nextToRun)
+                if(vTimer.start() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+                    exit(1);
+                }
+                totalQuants++;
             }
             return 0;
         }
@@ -185,7 +198,16 @@ int uthread_block(int tid)
         if(manager.blockThread(tid) != -1){                 // If thread exists.
             nextToRun = scheduler.whosNextBlock(tid);
             if(nextToRun != currRunning){                   // If we should do a context switch.
+                if (vTimer.zero() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
+                    exit(1);
+                }
                 //manager.switch(nextToRun);
+                if(vTimer.start() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+                    exit(1);
+                }
+                totalQuants++;
             }
         }
         std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;

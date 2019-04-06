@@ -20,7 +20,10 @@ int virtual_timer::start() {
     return 0;
 }
 
-void virtual_timer::zero() {
+int virtual_timer::zero() {
     _timer.it_value.tv_sec = 0;
     _timer.it_value.tv_usec = 0;
+    if (setitimer (ITIMER_VIRTUAL, &_timer, nullptr)) {
+        return -1;
+    }
 }
