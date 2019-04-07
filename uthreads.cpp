@@ -1,28 +1,24 @@
-// ISSUES & UPDATES:
-// 1) Why .Hpp?
-// 2) Why Implement things in the header?
-// 3) uthread_init: we shouldn't initialize the main thread, it is already exists: https://moodle2.cs.huji.ac.il/nu18/mod/forum/discuss.php?d=44535
-//    The scheduler should be created when _running is already 0, and the manager should contain thread 0 from the beginning.
-// 4) I massively changed scheduler: we had several problems since block, termination, sleep and timeout are different
-//    cases that require different treatment, which the older API didn't allow.
-// 5) I updated Terminate, block according to the new scheduler API.
-// 6) Fixed bug in uthread_resume.
-
 // TASKS:
-// TODO: Protect critical code
-// TODO: Implement timer mechanizem.
-// TODO: Implement Switch in scheduler
-// TODO: Implement Switch in manager.
+// TODO: SLEEP! (NOY)
+// TODO: Protect critical code (NEXT)
+// TODO: Implement Switch in manager.(BAR)
+// TODO: Take care of system errors. (BAR)
+// TODO: Initialize classes properly and implement a function that frees the memory of the library when needed. (NOY)
+// TODO: Test memory allocations. (NOY(Uthreads&scheduler) BAR (manager&thread))
+// TODO: How do we return from a switch? Does it has to be the last operation in the calling function? (BAR)
 
 
 
 #include "uthreads.h"
 #include "thread_manager.h"
 #include "scheduler.h"
+#include "virtual_timer.h"
 
 #include <queue>
 #include <unordered_map>
 #include <iostream>
+#include <signal.h>
+
 
 //-------------Error Massages:
 #define LIB_ERROR_SYNTAX "thread library error: "
@@ -30,14 +26,50 @@
 
 
 //-------------Static Globals:
-static thread_manager manager(0, MAX_THREAD_NUM, STACK_SIZE); // TODO: How to initialise it?
+static struct sigaction sa = {0};
+static thread_manager manager(0, MAX_THREAD_NUM, STACK_SIZE);
 static scheduler scheduler;
+static virtual_timer vTimer(0);
 static int totalQuants = 0;
-
-//-------------Timer:
-//TODO: TIMER DECLARATION AND SETTING & HANDLER & totalQuants maintenance
+static sigset_t toBlock;        // A set of signals to block where critical code is executed.
 
 
+//-------------Masking:
+void maskSignals(){
+    if(sigprocmask(SIG_SETMASK, &toBlock, nullptr) < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to set signal masking." << std::endl;
+        exit(1);
+    }
+}
+
+void unmaskSignals(){
+    if(sigprocmask(SIG_UNBLOCK, &toBlock, nullptr) < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to undo signal masking." << std::endl;
+        exit(1);
+    }
+}
+
+//-------------Signal Handlers:
+// TODO: What should I do with sig?
+// TODO: Should I add protection to this code? (use sigprogmask? add mask to sigaction?)
+static void handleQuantumTimeout(int sig){
+    // Zero the _timer:
+    if (vTimer.zero() < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
+        exit(1);
+    }
+
+    // Do a context switch:
+    int nextToRun = scheduler.whosNextTimeout();
+    // manager.switch(nextToRun);
+
+    // Start the _timer again & update totalQuants:
+    if(vTimer.start() < 0){
+        std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+        exit(1);
+    }
+    totalQuants++;
+}
 
 //---------------------------------Library Functionality---------------------
 /*
@@ -52,11 +84,31 @@ int uthread_init(int quantum_usecs)
 {
     if (quantum_usecs >= 0)
     {
-        //create global functionality holders:
+        // Create global functionality holders:
         manager = thread_manager(quantum_usecs, MAX_THREAD_NUM, STACK_SIZE);
         scheduler = scheduler;
+        vTimer = virtual_timer(quantum_usecs);
 
-        // init timer
+        // Initialize the signal set to block:
+        if(sigaddset(&toBlock, SIGVTALRM) < 0){
+            std::cerr << SYS_ERROR_SYNTAX << "Failed to initialize signal set to block." << std::endl;
+            exit(1);
+        }
+
+        // Set signal handlers:
+        sa.sa_handler = &handleQuantumTimeout;
+        sa.sa_flags = 0; // Verifies that no flags are applied.
+        if(sigaction(SIGVTALRM, &sa, nullptr) < 0){
+            std::cerr << SYS_ERROR_SYNTAX << "sigaction had failed." << std::endl;
+            exit(1);
+        }
+
+        // Start _timer & update the quantum counting:
+        if(vTimer.start() < 0){
+            std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+            exit(1);
+        }
+        totalQuants++;
     }
     std::cerr << LIB_ERROR_SYNTAX << "quantum_usec should be non-negative." << std::endl;
     return -1;
@@ -107,15 +159,22 @@ int uthread_terminate(int tid)
         {
             nextToRun = scheduler.whosNextTermination(tid);
             if(nextToRun != currRunning){                          // If we should do a context switch.
+                if (vTimer.zero() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
+                    exit(1);
+                }
                 // manager.switch(nextToRun)
-                //TODO: Why should this function not return if the thread terminates itself?
+                if(vTimer.start() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+                    exit(1);
+                }
+                totalQuants++;
             }
             return 0;
         }
         std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
         return -1;
     }
-    //TODO: release assigned memory if exists.
     exit(0);
 }
 
@@ -139,7 +198,16 @@ int uthread_block(int tid)
         if(manager.blockThread(tid) != -1){                 // If thread exists.
             nextToRun = scheduler.whosNextBlock(tid);
             if(nextToRun != currRunning){                   // If we should do a context switch.
+                if (vTimer.zero() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
+                    exit(1);
+                }
                 //manager.switch(nextToRun);
+                if(vTimer.start() < 0){
+                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
+                    exit(1);
+                }
+                totalQuants++;
             }
         }
         std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
@@ -160,7 +228,6 @@ int uthread_resume(int tid)
 {
     if (manager.unBlockThread(tid) != -1)
     {
-        // TODO(NOY): Do it in a scheduler's function resume().
         if((tid != scheduler.getRunning()) && !(scheduler.inReady(tid))){
             scheduler.appendTid(tid);
         }
