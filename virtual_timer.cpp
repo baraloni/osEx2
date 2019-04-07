@@ -1,7 +1,3 @@
-//
-// Created by Jonathan Weiss on 2019-04-05.
-//
-
 #include "virtual_timer.h"
 
 virtual_timer::virtual_timer(int quantum): _quantum(quantum), _timer(){}
@@ -26,4 +22,5 @@ int virtual_timer::zero() {
     if (setitimer (ITIMER_VIRTUAL, &_timer, nullptr)) {
         return -1;
     }
+    return 0;
 }

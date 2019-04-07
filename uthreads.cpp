@@ -1,11 +1,11 @@
 // TASKS:
-// TODO: SLEEP!
-// TODO: Protect critical code
-// TODO: Implement Switch in manager.
-// TODO: Take care of system errors.
-// TODO: Initialize classes properly and implement a function that frees the memory of the library when needed.
-// TODO: Test memory allocations.
-// TODO: Fix thread's constructor.
+// TODO: SLEEP! (NOY)
+// TODO: Protect critical code (NEXT)
+// TODO: Implement Switch in manager.(BAR)
+// TODO: Take care of system errors. (BAR)
+// TODO: Initialize classes properly and implement a function that frees the memory of the library when needed. (NOY)
+// TODO: Test memory allocations. (NOY(Uthreads&scheduler) BAR (manager&thread))
+// TODO: How do we return from a switch? Does it has to be the last operation in the calling function? (BAR)
 
 
 
