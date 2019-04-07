@@ -26,26 +26,44 @@
 
 
 //-------------Static Globals:
-static struct sigaction sa = {0};
-static thread_manager manager(0, MAX_THREAD_NUM, STACK_SIZE);
-static scheduler scheduler;
-static virtual_timer vTimer(0);
+static struct sigaction sa;
+static thread_manager* manager;
+static scheduler* scheduler;
+static virtual_timer* vTimer;
 static int totalQuants = 0;
 static sigset_t toBlock;        // A set of signals to block where critical code is executed.
 
+//------------Memory Management
+/**
+ * Clears the library resources.
+ */
+static void clearMem(){
+    delete scheduler;
+    delete manager;
+    delete vTimer;
+}
+
+
+/**
+ * Clears the system memory and exits.
+ * @param errMsg: The error message to be printed in the case of a system call.
+ */
+static void exitProg(const std::string& errMsg){
+    clearMem();
+    std::cerr << SYS_ERROR_SYNTAX << errMsg << std::endl;
+    exit(1);
+}
 
 //-------------Masking:
-void maskSignals(){
+static void maskSignals(){
     if(sigprocmask(SIG_SETMASK, &toBlock, nullptr) < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to set signal masking." << std::endl;
-        exit(1);
+        exitProg("Failed to set signal masking.");
     }
 }
 
-void unmaskSignals(){
+static void unmaskSignals(){
     if(sigprocmask(SIG_UNBLOCK, &toBlock, nullptr) < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to undo signal masking." << std::endl;
-        exit(1);
+        exitProg("Failed to undo signal masking.");
     }
 }
 
@@ -54,19 +72,17 @@ void unmaskSignals(){
 // TODO: Should I add protection to this code? (use sigprogmask? add mask to sigaction?)
 static void handleQuantumTimeout(int sig){
     // Zero the _timer:
-    if (vTimer.zero() < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
-        exit(1);
+    if (vTimer->zero() < 0){
+        exitProg("Failed to zero _timer.");
     }
 
     // Do a context switch:
-    int nextToRun = scheduler.whosNextTimeout();
+    int nextToRun = scheduler->whosNextTimeout();
     // manager.switch(nextToRun);
 
     // Start the _timer again & update totalQuants:
-    if(vTimer.start() < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-        exit(1);
+    if(vTimer->start() < 0){
+        exitProg("Failed to start _timer.");
     }
     totalQuants++;
 }
@@ -85,28 +101,26 @@ int uthread_init(int quantum_usecs)
     if (quantum_usecs >= 0)
     {
         // Create global functionality holders:
-        manager = thread_manager(quantum_usecs, MAX_THREAD_NUM, STACK_SIZE);
-        scheduler = scheduler;
-        vTimer = virtual_timer(quantum_usecs);
+        manager = new thread_manager(quantum_usecs, MAX_THREAD_NUM, STACK_SIZE);
+        vTimer = new virtual_timer(quantum_usecs);
+        scheduler = new class scheduler;
+        sa = {0};
 
         // Initialize the signal set to block:
         if(sigaddset(&toBlock, SIGVTALRM) < 0){
-            std::cerr << SYS_ERROR_SYNTAX << "Failed to initialize signal set to block." << std::endl;
-            exit(1);
+            exitProg("Failed to initialize signal set to block.");
         }
 
         // Set signal handlers:
         sa.sa_handler = &handleQuantumTimeout;
         sa.sa_flags = 0; // Verifies that no flags are applied.
         if(sigaction(SIGVTALRM, &sa, nullptr) < 0){
-            std::cerr << SYS_ERROR_SYNTAX << "sigaction had failed." << std::endl;
-            exit(1);
+            exitProg("sigaction had failed.");
         }
 
         // Start _timer & update the quantum counting:
-        if(vTimer.start() < 0){
-            std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-            exit(1);
+        if(vTimer->start() < 0){
+            exitProg("Failed to start _timer.");
         }
         totalQuants++;
     }
@@ -125,10 +139,10 @@ int uthread_init(int quantum_usecs)
  * On failure, return -1.
 */
 int uthread_spawn(void (*f)()){
-    int newTid = manager.createThread(f);
+    int newTid = manager->createThread(f);
 
     if(newTid != -1){
-        scheduler.appendTid(newTid);
+        scheduler->appendTid(newTid);
         return newTid;
     }
 
@@ -150,23 +164,21 @@ int uthread_spawn(void (*f)()){
 */
 int uthread_terminate(int tid)
 {
-    int currRunning = scheduler.getRunning();
+    int currRunning = scheduler->getRunning();
     int nextToRun;
 
     if(tid != 0)
     {
-        if (manager.killThread(tid) != -1)                        //If thread exists.
+        if (manager->killThread(tid) != -1)                        //If thread exists.
         {
-            nextToRun = scheduler.whosNextTermination(tid);
+            nextToRun = scheduler->whosNextTermination(tid);
             if(nextToRun != currRunning){                          // If we should do a context switch.
-                if (vTimer.zero() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
-                    exit(1);
+                if (vTimer->zero() < 0){
+                    exitProg("Failed to zero _timer.");
                 }
                 // manager.switch(nextToRun)
-                if(vTimer.start() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-                    exit(1);
+                if(vTimer->start() < 0){
+                    exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
             }
@@ -175,6 +187,7 @@ int uthread_terminate(int tid)
         std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
         return -1;
     }
+    clearMem();
     exit(0);
 }
 
@@ -190,22 +203,20 @@ int uthread_terminate(int tid)
 */
 int uthread_block(int tid)
 {
-    int currRunning = scheduler.getRunning();
+    int currRunning = scheduler->getRunning();
     int nextToRun;
 
     if (tid != 0)
     {
-        if(manager.blockThread(tid) != -1){                 // If thread exists.
-            nextToRun = scheduler.whosNextBlock(tid);
+        if(manager->blockThread(tid) != -1){                 // If thread exists.
+            nextToRun = scheduler->whosNextBlock(tid);
             if(nextToRun != currRunning){                   // If we should do a context switch.
-                if (vTimer.zero() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
-                    exit(1);
+                if (vTimer->zero() < 0){
+                    exitProg("Failed to zero _timer.");
                 }
                 //manager.switch(nextToRun);
-                if(vTimer.start() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-                    exit(1);
+                if(vTimer->start() < 0){
+                    exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
             }
@@ -226,10 +237,10 @@ int uthread_block(int tid)
 */
 int uthread_resume(int tid)
 {
-    if (manager.unBlockThread(tid) != -1)
+    if (manager->unBlockThread(tid) != -1)
     {
-        if((tid != scheduler.getRunning()) && !(scheduler.inReady(tid))){
-            scheduler.appendTid(tid);
+        if((tid != scheduler->getRunning()) && !(scheduler->inReady(tid))){
+            scheduler->appendTid(tid);
         }
         return 0;
     }
@@ -247,10 +258,10 @@ int uthread_resume(int tid)
 */
 int uthread_sleep(int usec)
 {
-    int currTid = scheduler.getRunning();
+    int currTid = scheduler->getRunning();
     if (currTid != 0)
     {
-        manager.putThreadToSleep(currTid);
+        manager->putThreadToSleep(currTid);
         //TODO: scheduling decision.
         return 0;
     }
@@ -264,7 +275,7 @@ int uthread_sleep(int usec)
 */
 int uthread_get_tid()
 {
-    return scheduler.getRunning();
+    return scheduler->getRunning();
 }
 
 
@@ -294,7 +305,7 @@ int uthread_get_total_quantums()
 */
 int uthread_get_quantums(int tid)
 {
-    int threadQuants = manager.getThreadQuants(tid);
+    int threadQuants = manager->getThreadQuants(tid);
     if (threadQuants != -1)  // If thread exists.
     {
         return threadQuants;
