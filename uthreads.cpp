@@ -3,7 +3,6 @@
 // TODO: Protect critical code (NEXT)
 // TODO: Implement Switch in manager.(BAR)
 // TODO: Take care of system errors. (BAR)
-// TODO: Initialize classes properly and implement a function that frees the memory of the library when needed. (NOY)
 // TODO: Test memory allocations. (NOY(Uthreads&scheduler) BAR (manager&thread))
 // TODO: How do we return from a switch? Does it has to be the last operation in the calling function? (BAR)
 
@@ -142,7 +141,7 @@ int uthread_spawn(void (*f)()){
     int newTid = manager->createThread(f);
 
     if(newTid != -1){
-        scheduler->appendTid(newTid);
+        scheduler->addThread(newTid);
         return newTid;
     }
 
@@ -239,9 +238,7 @@ int uthread_resume(int tid)
 {
     if (manager->unBlockThread(tid) != -1)
     {
-        if((tid != scheduler->getRunning()) && !(scheduler->inReady(tid))){
-            scheduler->appendTid(tid);
-        }
+       scheduler->addThread(tid);
         return 0;
     }
     std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;

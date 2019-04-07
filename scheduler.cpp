@@ -1,6 +1,3 @@
-// TODO: Should we put find in a try catch block?
-//TODO: delete inReady
-// TODO: delete appendTid
 
 #include <iostream>
 //#define NDEBUG
@@ -67,14 +64,4 @@ void scheduler::printReady() {
         std::cout << iter << "; ";
     }
     std::cout << std::endl;
-}
-
-
-// TO REMOVE:
-bool scheduler::inReady(int tid) {
-    return false;
-}
-
-void scheduler::appendTid(int tid) {
-    _ready.push_back(tid);
 }

@@ -77,15 +77,6 @@ public:
     */
     void printReady();
 
-    // TO DELETE:
-    void appendTid(int tid);
-
-    /**
-     * Returns true if the thread with this tid is in _ready.
-     * @param tid
-     * @return
-     */
-    bool inReady(int tid);
 };
 
 
