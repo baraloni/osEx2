@@ -1,7 +1,5 @@
 
-#include <iostream>
 //#define NDEBUG
-#include <cassert>
 #include "scheduler.h"
 
 /*------------- CONSTRUCTORS ------------*/
@@ -60,7 +58,7 @@ void scheduler::addThread(int tid) {
 }
 
 void scheduler::printReady() {
-    for(std::__1::__list_iterator<int, void *>::value_type & iter : _ready){
+    for(auto & iter : _ready){
         std::cout << iter << "; ";
     }
     std::cout << std::endl;

@@ -1,7 +1,10 @@
+
 #ifndef TEMPEX2_SCHEDULER_H
 #define TEMPEX2_SCHEDULER_H
-
+#include <iostream>
 #include <list>
+#include <algorithm>
+#include <cassert>
 
 static const int MAIN_THREAD_ID = 0;
 

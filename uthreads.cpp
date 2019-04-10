@@ -14,10 +14,8 @@
 #include "real_timer.h"
 #include "sleeping_threads_list.h"
 
-#include <queue>
-#include <unordered_map>
-#include <iostream>
 #include <signal.h>
+
 
 //--------------Consts:
 static const int CONVERT_CONST_SEC_TO_NSEC = 1000000000;
@@ -98,9 +96,9 @@ static void handleQuantumTimeout(int sig){
     totalQuants++;
 
     // Do a context switch:
+    int currRun = scheduler->getRunning();
     int nextToRun = scheduler->whosNextTimeout();
-    // manager.switch(nextToRun);
-
+    manager->switchContext(currRun, nextToRun);
 }
 
 /**
@@ -114,7 +112,8 @@ static void handleSleepTimeout(int sig){
     // Awake the relevant thread:
     sleepingThreads->pop();
     manager->wakeThread(toWakeTid);
-    if(!(manager->isThreadBlocked(toWakeTid))){
+    if(!(manager->isThreadBlocked(toWakeTid))) //if thread is not blocked
+    {
        scheduler->addThread(toWakeTid);
     }
 
@@ -149,8 +148,8 @@ int uthread_init(int quantum_usecs)
         rTimer = new real_timer;
         scheduler = new class scheduler;
         sleepingThreads = new SleepingThreadsList;
-        saVTimer = {0};
-        saRTimer = {0};
+        saVTimer = {nullptr};
+        saRTimer = {nullptr};
 
         // Initialize the signal set to block:
         if((sigaddset(&toBlock, SIGVTALRM) < 0)||(sigaddset(&toBlock, SIGALRM) < 0)) {
@@ -177,6 +176,7 @@ int uthread_init(int quantum_usecs)
             exitProg("Failed to start _timer.");
         }
         totalQuants++;
+        return 0;
     }
     std::cerr << LIB_ERROR_SYNTAX << "quantum_usec should be non-negative." << std::endl;
     return -1;
@@ -227,7 +227,7 @@ int uthread_terminate(int tid)
         {
             nextToRun = scheduler->whosNextTermination(tid);
             if(nextToRun != currRunning){                          // If we should do a context switch.
-                // manager.switch(nextToRun)
+                manager->switchContext(currRunning, nextToRun);
                 if(vTimer->start() < 0){
                     exitProg("Failed to start _timer.");
                 }
@@ -262,7 +262,7 @@ int uthread_block(int tid)
         if(manager->blockThread(tid) != -1){                 // If thread exists.
             nextToRun = scheduler->whosNextBlock(tid);
             if(nextToRun != currRunning){                   // If we should do a context switch.
-                //manager.switch(nextToRun);
+                manager->switchContext(currRunning, nextToRun);
                 if(vTimer->start() < 0){
                     exitProg("Failed to start _timer.");
                 }
