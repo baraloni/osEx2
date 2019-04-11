@@ -3,9 +3,11 @@
 #include "thread.h"
 #include "thread_manager.h"
 
+typedef unsigned long address_t;
+
 //-----Private helpers-----------------------------------------------------------------------------
 
-thread *thread_manager::findThread(const int tid) const
+thread *thread_manager::findThread(const int tid)
 {
     auto pairTidThread = _threads.find(tid);
     if (pairTidThread != _threads.end())
@@ -34,11 +36,12 @@ thread_manager::thread_manager(const int quantum_usecs, const int maxThreadNum,
                                                     _quantumUsecs(quantum_usecs), _largestId(0),
                                                     _usedIds(), _threads()
 {
-    //create representation of main thread:
-    thread mainThread  = thread(_env[0]);
-    _threads.insert({0, &mainThread});
-}
 
+    //create representation of main thread:
+    auto *mainThread = new thread();
+    mainThread->updateQuants();
+    _threads.insert({0, mainThread});
+}
 
 //----Class functionality--------------------------------------------------------------------------
 
@@ -47,9 +50,9 @@ int thread_manager::createThread(void (*f)())
     if (_threads.size() < _maxThreadNum)
     {
         int newTid = getSmallestTid();
-        thread newThread = thread(_env[newTid]);
-        newThread.setupThread(f, _stackSize);
-        _threads.insert({newTid, &newThread});
+        auto *newThread = new thread();
+        newThread->setupThread(f, _stackSize);
+        _threads.insert({newTid, newThread});
         return newTid;
     }
     return -1;
@@ -60,7 +63,8 @@ int thread_manager::killThread(const int tid)
     thread *threadWithTid = findThread(tid);
     if (threadWithTid != nullptr)
     {
-        _threads.erase(tid); //destructs the object & frees it's memory?
+        delete threadWithTid;
+        _threads.erase(tid);
         _usedIds.push(tid); //recycles this tid
         return 0;
     }
@@ -143,21 +147,17 @@ void thread_manager::switchContext(int currTid, int nextTid)
     thread *nextThread = thread_manager::findThread(nextTid);
     assert(currThread != nullptr && nextThread != nullptr);
 
-    // arg 1 is to save signals: the process's current signal mask is saved in env and will be restored
-    // TODO : which signals to save?
-    int retVal = sigsetjmp(_env[currTid], 1);
+    _threads[nextTid]->updateQuants();
 
-    // we're back from the jmp, handle:
-    if (retVal == 1)
+    if (currTid != nextTid)
     {
-        std::cout << "returning to " << currTid << "from " << nextTid << std::endl;
-
-        return; // gets back to the rest of it's code.
+        int retVal = sigsetjmp(currThread->_env, 1);
+        if (retVal == 0)
+        {
+            std::cerr << "- switch from " << currTid << " to " << nextTid << " -" << std::endl;
+            siglongjmp(nextThread->_env, 1);
+        }
     }
 
-    std::cout << "- switch from " << currTid << " to " << nextTid << " -" << std::endl;
 
-    //we're before the jmp: switch to the context of next thread
-    _threads[nextTid]->updateQuants();
-    siglongjmp(_env[nextTid], 1);
 }
