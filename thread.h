@@ -17,7 +17,7 @@ typedef unsigned long address_t;
  */
 class thread
 {
-    sigjmp_buf& _threadEnv;
+    char* _stack;
     int _quants; // holds the number of quantums this thread spent as RUNNING.
     bool _isBlocked;
     bool _isSleeping;
@@ -29,11 +29,19 @@ class thread
     address_t translateAddress(address_t addr);
 
 public:
+
+    sigjmp_buf _env;
+
     /**
      * Creates a new thread object.
      * @param env : the address of the thread's envelope/environment.
      */
-    thread(sigjmp_buf& env);
+    explicit thread();
+
+    /**
+     * destructs this thread object.
+     */
+    ~thread();
 
 
     /**
@@ -78,6 +86,8 @@ public:
      * Increments the value of _quants in 1.
      */
     void updateQuants();
+
+
 };
 
 

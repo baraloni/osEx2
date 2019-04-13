@@ -1,5 +1,6 @@
 
 //#define NDEBUG
+#include <csignal>
 #include "scheduler.h"
 
 /*------------- CONSTRUCTORS ------------*/
@@ -50,11 +51,13 @@ int scheduler::whosNextSleep() {
 
 
 void scheduler::addThread(int tid) {
+
     // If tid is not already in _ready or _running, add it to the end of _ready:
     auto findIter = std::find(_ready.begin(), _ready.end(), tid);
-    if((tid != _running) && (findIter==_ready.end())){
+    if((tid != _running) && (findIter ==_ready.end())){
         _ready.push_back(tid);
     }
+
 }
 
 void scheduler::printReady() {

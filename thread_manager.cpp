@@ -29,7 +29,7 @@ int thread_manager::getSmallestTid()
 }
 
 
-//--- Constructors---------------------------------------------------------------------------------
+//--- Constructor& Destructor--------------------------------------------------------------------------------
 
 thread_manager::thread_manager(const int quantum_usecs, const int maxThreadNum,
                                const int stackSize): _maxThreadNum(maxThreadNum - 1),_stackSize(stackSize),
@@ -41,6 +41,12 @@ thread_manager::thread_manager(const int quantum_usecs, const int maxThreadNum,
     auto *mainThread = new thread();
     mainThread->updateQuants();
     _threads.insert({0, mainThread});
+}
+
+thread_manager::~thread_manager()
+{
+    thread *threadWithTid = findThread(0);
+    delete threadWithTid;
 }
 
 //----Class functionality--------------------------------------------------------------------------
@@ -145,12 +151,19 @@ void thread_manager::switchContext(int currTid, int nextTid)
 {
     thread *currThread = thread_manager::findThread(currTid);
     thread *nextThread = thread_manager::findThread(nextTid);
-    assert(currThread != nullptr && nextThread != nullptr);
+
+    assert(nextThread != nullptr);
 
     _threads[nextTid]->updateQuants();
 
     if (currTid != nextTid)
     {
+        if(currThread == nullptr) // currThread terminated itself, can't save it's context, just jmp to nextThread
+        {
+            std::cerr << "- switch from " << currTid << " to " << nextTid << " -" << std::endl;
+            siglongjmp(nextThread->_env, 1);
+
+        }
         int retVal = sigsetjmp(currThread->_env, 1);
         if (retVal == 0)
         {

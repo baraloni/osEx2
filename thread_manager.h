@@ -19,7 +19,6 @@
 //classes:
 #include "thread.h"
 
-static sigjmp_buf _env[100];
 
 class thread_manager
 {
@@ -28,7 +27,8 @@ class thread_manager
     int _quantumUsecs;
     int _largestId;
     std::priority_queue<int, std::vector<int>, std::greater<>> _usedIds;
-    std::unordered_map<int, thread *> _threads;
+    std::unordered_map<int, thread*> _threads;
+
 
     /**
     * checks if the supplied tid represents an existing thread.
@@ -36,7 +36,7 @@ class thread_manager
     * @return the address of the thread whose tid is the supplied one.
     * if no such thread exists, returns nullptr.
     */
-    thread *findThread(int tid) const;
+    thread *findThread(int tid);
 
     /**
      * handles the tid assignments.
@@ -45,8 +45,10 @@ class thread_manager
     int getSmallestTid();
 
 
-
 public:
+
+    /** destructs this thread_manager object*/
+    ~thread_manager();
 
     /** constructs a thread_manager object*/
     thread_manager(int quantum_usecs, int maxThreadNum,

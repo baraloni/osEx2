@@ -1,10 +1,6 @@
 // TASKS:
 // TODO: Protect critical code (NEXT)
-// TODO: Implement Switch in manager.(BAR)
-// TODO: Take care of system errors. (BAR)
-// TODO: Test memory allocations. BAR (manager&thread))
-// TODO: How do we return from a switch? Does it has to be the last operation in the calling function? (BAR)
-
+// TODO: Take care of system errors. + Test memory allocations. BAR (BAR)
 
 
 #include "uthreads.h"
@@ -37,6 +33,11 @@ static int totalQuants = 0;
 static sigset_t toBlock;        // A set of signals to block where critical code is executed.
 
 //-------------Sleep
+/**
+ * Computes the time of day in which the thread is going to wake up.
+ * @param usecs_to_sleep
+ * @return
+ */
 static timeval calcWakUpTimeval(int usecs_to_sleep) {
 
     timeval now, time_to_sleep, wake_up_timeval;
@@ -90,10 +91,14 @@ static void unmaskSignals(){
  */
 static void handleQuantumTimeout(int sig){
     // Start the _timer again & update totalQuants:
+    std::cerr <<"\n**ALARM- timeout**\n";
+
     if(vTimer->start() < 0){
         exitProg("Failed to start _timer.");
     }
+
     totalQuants++;
+    std::cerr <<"\nTIME: " << totalQuants <<std::endl;
 
     // Do a context switch:
     int currRun = scheduler->getRunning();
@@ -106,27 +111,78 @@ static void handleQuantumTimeout(int sig){
  * @param sig
  */
 static void handleSleepTimeout(int sig){
-    wake_up_info* threadToAwake = sleepingThreads->peek();
-    int toWakeTid = threadToAwake->id;
 
-    // Awake the relevant thread:
-    sleepingThreads->pop();
-    manager->wakeThread(toWakeTid);
-    if(!(manager->isThreadBlocked(toWakeTid))) //if thread is not blocked
-    {
-       scheduler->addThread(toWakeTid);
-    }
+//
+//    wake_up_info* threadToAwake = sleepingThreads->peek();
+//    int toWakeTid = threadToAwake->id;
+//
+//    // Awake the relevant thread:
+//    sleepingThreads->pop();
+//    if(manager->wakeThread(toWakeTid) == 0){        // if thread exists (active, haven't been terminated while sleeping)
+//        if(!(manager->isThreadBlocked(toWakeTid))) //if thread is not blocked
+//        {
+//            scheduler->addThread(toWakeTid);
+//        }
+//    }
+//
+//    // calculate the time until the next waking:
+//    wake_up_info* nextToWake = sleepingThreads->peek();
+//
+//    if(nextToWake != nullptr) //if there are more sleeping threads, set a new timer for the head
+//    {
+//        timeval now = {0};
+//        gettimeofday(&now, nullptr);
+//        timeval nextWakingTime = nextToWake->awaken_tv;
+//        int totalTime = (nextWakingTime.tv_sec - now.tv_sec) * CONVERT_CONST_SEC_TO_NSEC +
+//                        (nextWakingTime.tv_usec - now.tv_usec) * CONVERT_CONST_MSEC_TO_NSEC;
+//
+//        //TODO: attend the case of several timers popping at the same time
+//
+//        // Reset the timer:
+//        rTimer->start(totalTime);
+//    }
 
-    // calculate the time until the next waking:
-    timeval now = {0};
-    gettimeofday(&now, nullptr);
-    wake_up_info* nextToWake = sleepingThreads->peek();
-    timeval nextWakingTime = nextToWake->awaken_tv;
-    int totalTime = (nextWakingTime.tv_sec - now.tv_sec) * CONVERT_CONST_SEC_TO_NSEC +
-                    (nextWakingTime.tv_usec - now.tv_usec) * CONVERT_CONST_MSEC_TO_NSEC;
+    std::cerr <<"\n**ALARM- sleep**\n";
+    int totalTime = 0;
+    int inLoop = 0;
+    do{
+        ++inLoop;
+        std::cerr << "inLoop: " << inLoop <<std::endl;
+        wake_up_info* threadToAwake = sleepingThreads->peek();
+        int toWakeTid = threadToAwake->id;
+
+        // Awake the relevant thread:
+        sleepingThreads->pop();
+        if(manager->wakeThread(toWakeTid) == 0){       // if thread exists (active, haven't been terminated while sleeping)
+            if(!(manager->isThreadBlocked(toWakeTid))) // if thread is not blocked
+            {
+                scheduler->addThread(toWakeTid);
+            }
+        }
+
+        // calculate the time until the next waking:
+        wake_up_info* nextToWake = sleepingThreads->peek();
+
+        if(nextToWake != nullptr) //if there are more sleeping threads, set a new timer for the head
+        {
+            timeval now = {0};
+            gettimeofday(&now, nullptr);
+            timeval nextWakingTime = nextToWake->awaken_tv;
+            totalTime = (nextWakingTime.tv_sec - now.tv_sec) * CONVERT_CONST_SEC_TO_NSEC +
+                        (nextWakingTime.tv_usec - now.tv_usec) * CONVERT_CONST_MSEC_TO_NSEC;
+            std::cerr<< "total time T" << nextToWake->id << ": " << totalTime << std::endl;
+        } else
+        {
+            return;
+        }
+    } while(totalTime <= 0);
 
     // Reset the timer:
     rTimer->start(totalTime);
+}
+
+static void testHandler(int sig){
+    std::cerr << "In the handler!!!" << std::endl;
 }
 
 //---------------------------------Library Functionality---------------------
@@ -176,6 +232,8 @@ int uthread_init(int quantum_usecs)
             exitProg("Failed to start _timer.");
         }
         totalQuants++;
+        std::cerr << "TIME: "<<uthread_get_total_quantums()<<std::endl;
+
         return 0;
     }
     std::cerr << LIB_ERROR_SYNTAX << "quantum_usec should be non-negative." << std::endl;
@@ -193,14 +251,16 @@ int uthread_init(int quantum_usecs)
  * On failure, return -1.
 */
 int uthread_spawn(void (*f)()){
+    maskSignals();
     int newTid = manager->createThread(f);
 
     if(newTid != -1){
         scheduler->addThread(newTid);
+        unmaskSignals();
         return newTid;
     }
-
     std::cerr <<  LIB_ERROR_SYNTAX << "Number of threads > MAX_THREAD_NUMBER." << std::endl;
+    unmaskSignals();
     return  -1;
 }
 
@@ -218,6 +278,7 @@ int uthread_spawn(void (*f)()){
 */
 int uthread_terminate(int tid)
 {
+    maskSignals();
     int currRunning = scheduler->getRunning();
     int nextToRun;
 
@@ -227,18 +288,22 @@ int uthread_terminate(int tid)
         {
             nextToRun = scheduler->whosNextTermination(tid);
             if(nextToRun != currRunning){                          // If we should do a context switch.
-                manager->switchContext(currRunning, nextToRun);
                 if(vTimer->start() < 0){
                     exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
+                std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+                manager->switchContext(currRunning, nextToRun);
             }
+            unmaskSignals();
             return 0;
         }
         std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+        unmaskSignals();
         return -1;
     }
     clearMem();
+    unmaskSignals();
     exit(0);
 }
 
@@ -254,6 +319,7 @@ int uthread_terminate(int tid)
 */
 int uthread_block(int tid)
 {
+    maskSignals();
     int currRunning = scheduler->getRunning();
     int nextToRun;
 
@@ -262,16 +328,23 @@ int uthread_block(int tid)
         if(manager->blockThread(tid) != -1){                 // If thread exists.
             nextToRun = scheduler->whosNextBlock(tid);
             if(nextToRun != currRunning){                   // If we should do a context switch.
-                manager->switchContext(currRunning, nextToRun);
                 if(vTimer->start() < 0){
                     exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
+                std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+                manager->switchContext(currRunning, nextToRun);
+
             }
+            unmaskSignals();
+            return 0;
         }
         std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+        unmaskSignals();
+        return -1;
     }
     std::cerr <<  LIB_ERROR_SYNTAX << "Blocking the main thread is forbidden." << std::endl;
+    unmaskSignals();
     return -1;
 }
 
@@ -285,14 +358,17 @@ int uthread_block(int tid)
 */
 int uthread_resume(int tid)
 {
+    maskSignals();
     if (manager->unBlockThread(tid) != -1)
     {
        if(!manager->isThreadAsleep(tid)){
            scheduler->addThread(tid);
        }
-        return 0;
+       unmaskSignals();
+       return 0;
     }
     std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+    unmaskSignals();
     return -1;
 }
 
@@ -306,6 +382,7 @@ int uthread_resume(int tid)
 */
 int uthread_sleep(unsigned int usec)
 {
+    maskSignals();
     int runningThreadTid = scheduler->getRunning();
     wake_up_info* oldFirstToWake = sleepingThreads->peek(); // NULL if the list is empty.
 
@@ -332,11 +409,17 @@ int uthread_sleep(unsigned int usec)
         int nextToRun = scheduler->whosNextSleep();
 
         // And do a context-switch:
-        // manager->switch(runningThreadTid, nextToRun);
-
+        if(vTimer->start() < 0){
+            exitProg("Failed to start _timer.");
+        }
+        totalQuants++;
+        std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+        manager->switchContext(runningThreadTid, nextToRun);
+        unmaskSignals();
         return 0;
     }
     std::cerr <<  LIB_ERROR_SYNTAX << "The main thread can't sleep." << std::endl;
+    unmaskSignals();
     return -1;
 }
 
@@ -346,7 +429,11 @@ int uthread_sleep(unsigned int usec)
 */
 int uthread_get_tid()
 {
-    return scheduler->getRunning();
+    maskSignals();
+    int retVal = scheduler->getRunning();
+    unmaskSignals();
+
+    return retVal;
 }
 
 
@@ -376,11 +463,14 @@ int uthread_get_total_quantums()
 */
 int uthread_get_quantums(int tid)
 {
+    maskSignals();
     int threadQuants = manager->getThreadQuants(tid);
     if (threadQuants != -1)  // If thread exists.
     {
+        unmaskSignals();
         return threadQuants;
     }
     std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+    unmaskSignals();
     return -1;
 }
