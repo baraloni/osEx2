@@ -91,19 +91,20 @@ static void unmaskSignals(){
  */
 static void handleQuantumTimeout(int sig){
     // Start the _timer again & update totalQuants:
-    std::cerr <<"\n**ALARM- timeout**\n";
+//    std::cerr <<"\n**ALARM- timeout**\n";
+    if(sig == SIGVTALRM){
+        if(vTimer->start() < 0){
+            exitProg("Failed to start _timer.");
+        }
 
-    if(vTimer->start() < 0){
-        exitProg("Failed to start _timer.");
+        totalQuants++;
+//    std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+
+        // Do a context switch:
+        int currRun = scheduler->getRunning();
+        int nextToRun = scheduler->whosNextTimeout();
+        manager->switchContext(currRun, nextToRun);
     }
-
-    totalQuants++;
-    std::cerr <<"\nTIME: " << totalQuants <<std::endl;
-
-    // Do a context switch:
-    int currRun = scheduler->getRunning();
-    int nextToRun = scheduler->whosNextTimeout();
-    manager->switchContext(currRun, nextToRun);
 }
 
 /**
@@ -142,47 +143,45 @@ static void handleSleepTimeout(int sig){
 //        rTimer->start(totalTime);
 //    }
 
-    std::cerr <<"\n**ALARM- sleep**\n";
-    int totalTime = 0;
-    int inLoop = 0;
-    do{
-        ++inLoop;
-        std::cerr << "inLoop: " << inLoop <<std::endl;
-        wake_up_info* threadToAwake = sleepingThreads->peek();
-        int toWakeTid = threadToAwake->id;
+//    std::cerr <<"\n**ALARM- sleep**\n";
+    if(sig == SIGALRM){
+        int totalTime = 0;
+        int inLoop = 0;
+        do{
+            ++inLoop;
+            std::cerr << "inLoop: " << inLoop <<std::endl;
+            wake_up_info* threadToAwake = sleepingThreads->peek();
+            int toWakeTid = threadToAwake->id;
 
-        // Awake the relevant thread:
-        sleepingThreads->pop();
-        if(manager->wakeThread(toWakeTid) == 0){       // if thread exists (active, haven't been terminated while sleeping)
-            if(!(manager->isThreadBlocked(toWakeTid))) // if thread is not blocked
-            {
-                scheduler->addThread(toWakeTid);
+            // Awake the relevant thread:
+            sleepingThreads->pop();
+            if(manager->wakeThread(toWakeTid) == 0){       // if thread exists (active, haven't been terminated while sleeping)
+                if(!(manager->isThreadBlocked(toWakeTid))) // if thread is not blocked
+                {
+                    scheduler->addThread(toWakeTid);
+                }
             }
-        }
 
-        // calculate the time until the next waking:
-        wake_up_info* nextToWake = sleepingThreads->peek();
+            // calculate the time until the next waking:
+            wake_up_info* nextToWake = sleepingThreads->peek();
 
-        if(nextToWake != nullptr) //if there are more sleeping threads, set a new timer for the head
-        {
-            timeval now = {0};
-            gettimeofday(&now, nullptr);
-            timeval nextWakingTime = nextToWake->awaken_tv;
-            totalTime = (nextWakingTime.tv_sec - now.tv_sec) * CONVERT_CONST_SEC_TO_NSEC +
-                        (nextWakingTime.tv_usec - now.tv_usec) * CONVERT_CONST_MSEC_TO_NSEC;
-            std::cerr<< "total time T" << nextToWake->id << ": " << totalTime << std::endl;
-        } else
-        {
-            return;
-        }
-    } while(totalTime <= 0);
+            if(nextToWake != nullptr) //if there are more sleeping threads, set a new timer for the head
+            {
+                timeval now;
+                gettimeofday(&now, nullptr);
+                timeval nextWakingTime = nextToWake->awaken_tv;
+                totalTime = (nextWakingTime.tv_sec - now.tv_sec) * CONVERT_CONST_SEC_TO_NSEC +
+                            (nextWakingTime.tv_usec - now.tv_usec) * CONVERT_CONST_MSEC_TO_NSEC;
+                std::cerr<< "total time T" << nextToWake->id << ": " << totalTime << std::endl;
+            } else
+            {
+                return;
+            }
+        } while(totalTime <= 0);
 
-    // Reset the timer:
-    rTimer->start(totalTime);
-}
-
-static void testHandler(int sig){
-    std::cerr << "In the handler!!!" << std::endl;
+        // Reset the timer:
+        rTimer->start(totalTime);
+    }
 }
 
 //---------------------------------Library Functionality---------------------
@@ -196,7 +195,7 @@ static void testHandler(int sig){
 */
 int uthread_init(int quantum_usecs)
 {
-    if (quantum_usecs >= 0)
+    if (quantum_usecs > 0)
     {
         // Create global functionality holders:
         manager = new thread_manager(quantum_usecs, MAX_THREAD_NUM, STACK_SIZE);
@@ -204,8 +203,8 @@ int uthread_init(int quantum_usecs)
         rTimer = new real_timer;
         scheduler = new class scheduler;
         sleepingThreads = new SleepingThreadsList;
-        saVTimer = {nullptr};
-        saRTimer = {nullptr};
+        saVTimer = {};
+        saRTimer = {};
 
         // Initialize the signal set to block:
         if((sigaddset(&toBlock, SIGVTALRM) < 0)||(sigaddset(&toBlock, SIGALRM) < 0)) {
@@ -232,7 +231,7 @@ int uthread_init(int quantum_usecs)
             exitProg("Failed to start _timer.");
         }
         totalQuants++;
-        std::cerr << "TIME: "<<uthread_get_total_quantums()<<std::endl;
+//        std::cerr << "TIME: "<<uthread_get_total_quantums()<<std::endl;
 
         return 0;
     }
@@ -292,7 +291,7 @@ int uthread_terminate(int tid)
                     exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
-                std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+//                std::cerr <<"\nTIME: " << totalQuants <<std::endl;
                 manager->switchContext(currRunning, nextToRun);
             }
             unmaskSignals();
@@ -332,7 +331,7 @@ int uthread_block(int tid)
                     exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
-                std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+//                std::cerr <<"\nTIME: " << totalQuants <<std::endl;
                 manager->switchContext(currRunning, nextToRun);
 
             }
@@ -413,7 +412,7 @@ int uthread_sleep(unsigned int usec)
             exitProg("Failed to start _timer.");
         }
         totalQuants++;
-        std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+//        std::cerr <<"\nTIME: " << totalQuants <<std::endl;
         manager->switchContext(runningThreadTid, nextToRun);
         unmaskSignals();
         return 0;
