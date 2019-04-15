@@ -1,0 +1,47 @@
+noystl, baraloni
+Noy Sternlicht (205765365), Bar Aloni (305230740)
+EX: 1
+
+FILES:
+README -- This file.
+Makefile -- A file containing a set of directives used by a 
+			make build automation tool to generate the uthreads static library.
+
+REMARKS:
+
+
+ANSWERS:
+1)
+One general use of user-level threads is to expend the functionality of operating systems that
+don't support threading, don't implement kernel level threads.
+User-level threads are a reasonable choice for this example because
+it allows the user to simulate multi threading on an OS that don't deliver this functionality.
+
+2)
+    ADVANTEGES
+- More secure: When Chrome is using different processes for different tabs,
+it is more likely that what happens in one tab would not affect other tabs.
+This is happening since the OS separates the processes from each other:
+each process has a separate address space, different code, different files and different data.
+In that way, If something bad happens in one tab it won't harm the other tabs.
+
+    DISADVANTAGES
+- Memory wasteful: The tabs are probably all using the same code, but since processes
+  should be isolated, each of them is holding a separate copy of the code, which costs more memory.
+- Communication is costly: communication between processes has high overhead,
+  so it will be expensive for one tab to communicate with other tabs.
+
+3)
+Explain which interrupts and signals are involved during the command execution, what
+triggered them and who should handle them. In your answer refer to the keyboard, OS,
+shell and the application you just killed
+
+
+4)
+Real-time is always counted (like real world time). Virtual-time, however,
+is counted only when the process is executing.
+For example, if we want to build a stop-watch application it is more likely that we'll
+want to use real-time to measure time (since users will be using it to measure real world time).
+However, if we'll want to build a productivity app that, lets say, limits the time the user
+spends on Youtube, we will want to use virtual time to measure it, since we are interested only
+in the time the process running Youtube's tab is active.

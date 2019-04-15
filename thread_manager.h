@@ -26,7 +26,7 @@ class thread_manager
     int _stackSize;
     int _quantumUsecs;
     int _largestId;
-    std::priority_queue<int, std::vector<int>, std::greater<>> _usedIds;
+    std::priority_queue<int, std::vector<int>, std::greater<int>> _usedIds;
     std::unordered_map<int, thread*> _threads;
 
 
@@ -47,18 +47,25 @@ class thread_manager
 
 public:
 
-    /** destructs this thread_manager object*/
-    ~thread_manager();
-
     /** constructs a thread_manager object*/
     thread_manager(int quantum_usecs, int maxThreadNum,
                    int stackSize);
+
+    /** destructs this thread_manager object*/
+    ~thread_manager();
+
+    /**
+     * initializes the thread_manager object: creates representation of main thread.
+     * @return 0 on success, prints error and returns -2 on system fail.
+     */
+    int threadManagerSetup();
 
     /**
      * Creates a new thread object.
      * @param f : The function the thread should execute.
      * @return the new thread's tid, a non negative int.
       * -1 if the new thread could not be created.
+      * prints an error and returns -2 if a system error occurred.
      */
     int createThread(void (*f)());
 

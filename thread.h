@@ -1,15 +1,15 @@
 #ifndef TEMPEX2_THREAD_H
 #define TEMPEX2_THREAD_H
 
-
 #include <stdio.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <errno.h>
+#include <cstring>
 
 typedef unsigned long address_t;
-
 
 /**
  * This class is a "ticket" which saves on it the thread's information. It is supposed to be
@@ -29,12 +29,11 @@ class thread
     address_t translateAddress(address_t addr);
 
 public:
-
     sigjmp_buf _env;
 
     /**
      * Creates a new thread object.
-     * @param env : the address of the thread's envelope/environment.
+     * @param env : the address of the thread's environment.
      */
     explicit thread();
 
@@ -48,9 +47,9 @@ public:
      * sets up the thread context
      * @param f : The function the thread should execute.
      * @param stackSize: The size of the thread's size.
-     * @return
+     * @return 0 on success. if failed: prints the error and returns -1.
      */
-    void setupThread(void(*f)(), int stackSize);
+    int setupThread(void(*f)(), int stackSize);
 
     /**
      * Updates the _setBlocked parameter.

@@ -32,16 +32,10 @@ int thread_manager::getSmallestTid()
 //--- Constructor& Destructor--------------------------------------------------------------------------------
 
 thread_manager::thread_manager(const int quantum_usecs, const int maxThreadNum,
-                               const int stackSize): _maxThreadNum(maxThreadNum - 1),_stackSize(stackSize),
-                                                    _quantumUsecs(quantum_usecs), _largestId(0),
-                                                    _usedIds(), _threads()
-{
-
-    //create representation of main thread:
-    auto *mainThread = new thread();
-    mainThread->updateQuants();
-    _threads.insert({0, mainThread});
-}
+                               const int stackSize):
+                               _maxThreadNum(maxThreadNum),_stackSize(stackSize),
+                               _quantumUsecs(quantum_usecs), _largestId(0), _usedIds(), _threads()
+                               {}
 
 thread_manager::~thread_manager()
 {
@@ -51,15 +45,43 @@ thread_manager::~thread_manager()
 
 //----Class functionality--------------------------------------------------------------------------
 
+int thread_manager::threadManagerSetup()
+{
+    //creates representation of main thread:
+    thread *mainThread;
+    try{
+         mainThread = new thread();
+    }
+    catch (std::bad_alloc& e)
+    {
+        std::cerr << "system error: bad memory allocation when creating thread." << std::endl;
+        return -2;
+    }
+    mainThread->updateQuants();
+    if (_threads.insert({0, mainThread}).second) // if the insertion took place successfully
+    {
+        return 0;
+    }
+    std::cerr << "system error: couldn't insert new thread to threads list." << std::endl;
+    return -2;
+
+}
+
 int thread_manager::createThread(void (*f)())
 {
-    if (_threads.size() < _maxThreadNum)
+    if ((int)_threads.size() < _maxThreadNum)
     {
         int newTid = getSmallestTid();
         auto *newThread = new thread();
-        newThread->setupThread(f, _stackSize);
-        _threads.insert({newTid, newThread});
-        return newTid;
+        if (!newThread->setupThread(f, _stackSize))
+        {
+            if (_threads.insert({newTid, newThread}).second) // if the insertion took place successfully
+            {
+                return newTid;
+            }
+            std::cerr << "system error: couldn't insert new thread to threads list." << std::endl;
+        }
+        return -2;
     }
     return -1;
 }
@@ -99,7 +121,7 @@ int thread_manager::unBlockThread(const int tid)
     return -1;
 }
 
-bool thread_manager::isThreadBlocked(const int tid) //TODO: check with sleep impl
+bool thread_manager::isThreadBlocked(const int tid)
 {
     thread *threadWithTid = findThread(tid);
     if (threadWithTid != nullptr)
@@ -128,7 +150,7 @@ int thread_manager::wakeThread(const int tid)
     return -1;
 }
 
-bool thread_manager::isThreadAsleep(const int tid) //TODO: check with sleep impl
+bool thread_manager::isThreadAsleep(const int tid)
 {
     thread *threadWithTid = findThread(tid);
     if (threadWithTid != nullptr)
@@ -160,14 +182,12 @@ void thread_manager::switchContext(int currTid, int nextTid)
     {
         if(currThread == nullptr) // currThread terminated itself, can't save it's context, just jmp to nextThread
         {
-            std::cerr << "- switch from " << currTid << " to " << nextTid << " -" << std::endl;
             siglongjmp(nextThread->_env, 1);
 
         }
         int retVal = sigsetjmp(currThread->_env, 1);
         if (retVal == 0)
         {
-            std::cerr << "- switch from " << currTid << " to " << nextTid << " -" << std::endl;
             siglongjmp(nextThread->_env, 1);
         }
     }

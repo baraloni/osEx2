@@ -52,14 +52,22 @@ thread::thread()
 
 thread::~thread()
 {
+    //will not be called foe the main thread so will not cause an error.
     delete _stack;
 }
 
 //----------------- general functionality-------------------------------------------------------------------------------
 
-void thread::setupThread(void(*f)(), int stackSize)
+int thread::setupThread(void(*f)(), int stackSize)
 {
-    _stack = new char[stackSize];
+    try{
+        _stack = new char[stackSize];
+    }
+    catch (std::bad_alloc& e)
+    {
+        std::cerr << "system error: bad memory allocation when creating thread." << std::endl;
+        return -2;
+    }
     address_t sp = (address_t) _stack + stackSize - sizeof(address_t);
     auto pc = (address_t)f;
     auto translatedSp = translateAddress(sp);
@@ -67,7 +75,12 @@ void thread::setupThread(void(*f)(), int stackSize)
     sigsetjmp(_env, 1);
     (_env->__jmpbuf)[JB_SP] = translatedSp;
     (_env->__jmpbuf)[JB_PC] = translatedPc;
-    sigemptyset(&_env->__saved_mask); // TODO: sys error
+    if (sigemptyset(&_env->__saved_mask) == -1)
+    {
+        std::cerr << "system error: " << strerror(errno) << std::endl;
+        return -2;
+    }
+    return 0;
 }
 
 void thread::setBlocked(bool isBlocked){
