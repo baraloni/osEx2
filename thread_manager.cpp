@@ -183,7 +183,6 @@ void thread_manager::switchContext(int currTid, int nextTid)
         if(currThread == nullptr) // currThread terminated itself, can't save it's context, just jmp to nextThread
         {
             siglongjmp(nextThread->_env, 1);
-
         }
         int retVal = sigsetjmp(currThread->_env, 1);
         if (retVal == 0)
@@ -191,6 +190,4 @@ void thread_manager::switchContext(int currTid, int nextTid)
             siglongjmp(nextThread->_env, 1);
         }
     }
-
-
 }

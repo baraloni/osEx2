@@ -1,11 +1,20 @@
 noystl, baraloni
 Noy Sternlicht (205765365), Bar Aloni (305230740)
-EX: 1
+EX: 2
 
 FILES:
 README -- This file.
 Makefile -- A file containing a set of directives used by a 
 			make build automation tool to generate the uthreads static library.
+uthreads.cpp -- A user level threads library.
+scheduler.cpp-- Decides which thread to run whenever a context-switch in needed.
+thread_manager.cpp -- Keeps the threads created in the library, and handles their inner states.
+thread.cpp -- Represents a thread object.
+virtual_timer.cpp --  Measures a quantum in virtual time.
+real_timer.cpp -- Measures real time according to the user's wish.
+sleeping_threads_list.cpp -- A data structure containing all the threads in the state: SLEEP
+
+(and header files for all files mentioned above, but uthreads).
 
 REMARKS:
 
@@ -32,10 +41,12 @@ In that way, If something bad happens in one tab it won't harm the other tabs.
   so it will be expensive for one tab to communicate with other tabs.
 
 3)
-Explain which interrupts and signals are involved during the command execution, what
-triggered them and who should handle them. In your answer refer to the keyboard, OS,
-shell and the application you just killed
-
+First of all, as we type on the keyboard we are sending an interrupt from the I/O device.
+The system gets the interrupt, evaluates the character given and causes the shell to present it
+on screen. This cycle keeps on going until we press "enter" which causes an interrupt to be sent
+to the OS, telling it to execute the system call: "kill <pid>".
+When sending kill the default signal that is being sent is SIGTERM: a signal that gives the process
+the opportunity to handle the closing.
 
 4)
 Real-time is always counted (like real world time). Virtual-time, however,

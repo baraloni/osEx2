@@ -70,7 +70,7 @@ static void exitProg(const std::string& errMsg){
 
 //-------------Masking:
 static void maskSignals(){
-    if(sigprocmask(SIG_SETMASK, &toBlock, nullptr) < 0){
+    if(sigprocmask(SIG_BLOCK, &toBlock, nullptr) < 0){
         exitProg("Failed to set signal masking.");
     }
 }
@@ -115,7 +115,6 @@ static void handleSleepTimeout(int sig){
         int inLoop = 0;
         do{
             ++inLoop;
-            std::cerr << "inLoop: " << inLoop <<std::endl;
             wake_up_info* threadToAwake = sleepingThreads->peek();
             int toWakeTid = threadToAwake->id;
 
@@ -138,7 +137,6 @@ static void handleSleepTimeout(int sig){
                 timeval nextWakingTime = nextToWake->awaken_tv;
                 totalTime = (nextWakingTime.tv_sec - now.tv_sec) * CONVERT_CONST_SEC_TO_NSEC +
                             (nextWakingTime.tv_usec - now.tv_usec) * CONVERT_CONST_MSEC_TO_NSEC;
-                std::cerr<< "total time T" << nextToWake->id << ": " << totalTime << std::endl;
             } else
             {
                 return;
