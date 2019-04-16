@@ -1,74 +1,151 @@
-// TASKS:
-// TODO: SLEEP! (NOY)
-// TODO: Protect critical code (NEXT)
-// TODO: Implement Switch in manager.(BAR)
-// TODO: Take care of system errors. (BAR)
-// TODO: Initialize classes properly and implement a function that frees the memory of the library when needed. (NOY)
-// TODO: Test memory allocations. (NOY(Uthreads&scheduler) BAR (manager&thread))
-// TODO: How do we return from a switch? Does it has to be the last operation in the calling function? (BAR)
-
-
 
 #include "uthreads.h"
 #include "thread_manager.h"
 #include "scheduler.h"
 #include "virtual_timer.h"
+#include "real_timer.h"
+#include "sleeping_threads_list.h"
 
-#include <queue>
-#include <unordered_map>
-#include <iostream>
 #include <signal.h>
 
 
-//-------------Error Massages:
-#define LIB_ERROR_SYNTAX "thread library error: "
-#define SYS_ERROR_SYNTAX "system error: "
+//--------------Consts:
+static const int CONVERT_CONST_SEC_TO_NSEC = 1000000000;
+static const int CONVERT_CONST_MSEC_TO_NSEC = 1000;
 
+//-------------Error Massages:
+static const int sysError = -2;
+
+static std::string libErrorSyntax =  "thread library error: ";
+static std::string sysErrorSyntax = "system error: ";
 
 //-------------Static Globals:
-static struct sigaction sa = {0};
-static thread_manager manager(0, MAX_THREAD_NUM, STACK_SIZE);
-static scheduler scheduler;
-static virtual_timer vTimer(0);
+static struct sigaction saVTimer;
+static struct sigaction saRTimer;
+static SleepingThreadsList* sleepingThreads;
+static thread_manager* manager;
+static scheduler* scheduler;
+static virtual_timer* vTimer;
+static real_timer* rTimer;
 static int totalQuants = 0;
 static sigset_t toBlock;        // A set of signals to block where critical code is executed.
 
+//-------------Sleep
+/**
+ * Computes the time of day in which the thread is going to wake up.
+ * @param usecs_to_sleep
+ * @return
+ */
+static timeval calcWakUpTimeval(int usecs_to_sleep) {
+
+    timeval now, time_to_sleep, wake_up_timeval;
+    gettimeofday(&now, nullptr);
+    time_to_sleep.tv_sec = usecs_to_sleep / 1000000;
+    time_to_sleep.tv_usec = usecs_to_sleep % 1000000;
+    timeradd(&now, &time_to_sleep, &wake_up_timeval);
+    return wake_up_timeval;
+}
+
+//------------Memory Management
+/**
+ * Clears the library resources.
+ */
+static void clearMem(){
+    delete scheduler;
+    delete manager;
+    delete vTimer;
+    delete sleepingThreads;
+    delete rTimer;
+}
+
+/**
+ * Clears the system memory and exits.
+ * @param errMsg: The error message to be printed in the case of a system call.
+ */
+static void exitProg(const std::string& errMsg){
+    clearMem();
+    std::cerr << sysErrorSyntax << errMsg << std::endl;
+    exit(1);
+}
 
 //-------------Masking:
-void maskSignals(){
-    if(sigprocmask(SIG_SETMASK, &toBlock, nullptr) < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to set signal masking." << std::endl;
-        exit(1);
+static void maskSignals(){
+    if(sigprocmask(SIG_BLOCK, &toBlock, nullptr) < 0){
+        exitProg("Failed to set signal masking.");
     }
 }
 
-void unmaskSignals(){
+static void unmaskSignals(){
     if(sigprocmask(SIG_UNBLOCK, &toBlock, nullptr) < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to undo signal masking." << std::endl;
-        exit(1);
+        exitProg("Failed to undo signal masking.");
     }
 }
 
 //-------------Signal Handlers:
-// TODO: What should I do with sig?
-// TODO: Should I add protection to this code? (use sigprogmask? add mask to sigaction?)
+
+/**
+ * Responds when the time for the running thread has passed, and preforms a context-switch.
+ * @param sig
+ */
 static void handleQuantumTimeout(int sig){
-    // Zero the _timer:
-    if (vTimer.zero() < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
-        exit(1);
-    }
-
-    // Do a context switch:
-    int nextToRun = scheduler.whosNextTimeout();
-    // manager.switch(nextToRun);
-
     // Start the _timer again & update totalQuants:
-    if(vTimer.start() < 0){
-        std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-        exit(1);
+//    std::cerr <<"\n**ALARM- timeout**\n";
+    if(sig == SIGVTALRM){
+        if(vTimer->start() < 0){
+            exitProg("Failed to start _timer.");
+        }
+
+        totalQuants++;
+//    std::cerr <<"\nTIME: " << totalQuants <<std::endl;
+
+        // Do a context switch:
+        int currRun = scheduler->getRunning();
+        int nextToRun = scheduler->whosNextTimeout();
+        manager->switchContext(currRun, nextToRun);
     }
-    totalQuants++;
+}
+
+/**
+ * Wakes up the signal who's timer expired.
+ * @param sig
+ */
+static void handleSleepTimeout(int sig){
+    if(sig == SIGALRM){
+        int totalTime = 0;
+        int inLoop = 0;
+        do{
+            ++inLoop;
+            wake_up_info* threadToAwake = sleepingThreads->peek();
+            int toWakeTid = threadToAwake->id;
+
+            // Awake the relevant thread:
+            sleepingThreads->pop();
+            if(manager->wakeThread(toWakeTid) == 0){       // if thread exists (active, haven't been terminated while sleeping)
+                if(!(manager->isThreadBlocked(toWakeTid))) // if thread is not blocked
+                {
+                    scheduler->addThread(toWakeTid);
+                }
+            }
+
+            // calculate the time until the next waking:
+            wake_up_info* nextToWake = sleepingThreads->peek();
+
+            if(nextToWake != nullptr) //if there are more sleeping threads, set a new timer for the head
+            {
+                timeval now;
+                gettimeofday(&now, nullptr);
+                timeval nextWakingTime = nextToWake->awaken_tv;
+                totalTime = (nextWakingTime.tv_sec - now.tv_sec) * CONVERT_CONST_SEC_TO_NSEC +
+                            (nextWakingTime.tv_usec - now.tv_usec) * CONVERT_CONST_MSEC_TO_NSEC;
+            } else
+            {
+                return;
+            }
+        } while(totalTime <= 0);
+
+        // Reset the timer:
+        rTimer->start(totalTime);
+    }
 }
 
 //---------------------------------Library Functionality---------------------
@@ -82,35 +159,51 @@ static void handleQuantumTimeout(int sig){
 */
 int uthread_init(int quantum_usecs)
 {
-    if (quantum_usecs >= 0)
+    if (quantum_usecs > 0)
     {
         // Create global functionality holders:
-        manager = thread_manager(quantum_usecs, MAX_THREAD_NUM, STACK_SIZE);
-        scheduler = scheduler;
-        vTimer = virtual_timer(quantum_usecs);
+        manager = new thread_manager(quantum_usecs, MAX_THREAD_NUM, STACK_SIZE);
+        if (manager->threadManagerSetup() == sysError) // a sys error occurred in manager setup
+        {
+            clearMem();
+            exit(1);
+        }
+        vTimer = new virtual_timer(quantum_usecs);
+        rTimer = new real_timer;
+        scheduler = new class scheduler;
+        sleepingThreads = new SleepingThreadsList;
+        saVTimer = {};
+        saRTimer = {};
 
         // Initialize the signal set to block:
-        if(sigaddset(&toBlock, SIGVTALRM) < 0){
-            std::cerr << SYS_ERROR_SYNTAX << "Failed to initialize signal set to block." << std::endl;
-            exit(1);
+        if((sigaddset(&toBlock, SIGVTALRM) < 0)||(sigaddset(&toBlock, SIGALRM) < 0)) {
+            exitProg("Failed to initialize signal set to block.");
         }
 
         // Set signal handlers:
-        sa.sa_handler = &handleQuantumTimeout;
-        sa.sa_flags = 0; // Verifies that no flags are applied.
-        if(sigaction(SIGVTALRM, &sa, nullptr) < 0){
-            std::cerr << SYS_ERROR_SYNTAX << "sigaction had failed." << std::endl;
-            exit(1);
+        saVTimer.sa_handler = &handleQuantumTimeout;
+        saVTimer.sa_mask = toBlock;
+        saVTimer.sa_flags = 0; // Verifies that no flags are applied.
+        if(sigaction(SIGVTALRM, &saVTimer, nullptr) < 0){
+            exitProg("sigaction had failed.");
+        }
+
+        saRTimer.sa_handler = &handleSleepTimeout;
+        saRTimer.sa_mask = toBlock;
+        saRTimer.sa_flags = 0; // Verifies that no flags are applied.
+        if(sigaction(SIGALRM, &saRTimer, nullptr) < 0){
+            exitProg("sigaction had failed.");
         }
 
         // Start _timer & update the quantum counting:
-        if(vTimer.start() < 0){
-            std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-            exit(1);
+        if(vTimer->start() < 0){
+            exitProg("Failed to start _timer.");
         }
         totalQuants++;
+
+        return 0;
     }
-    std::cerr << LIB_ERROR_SYNTAX << "quantum_usec should be non-negative." << std::endl;
+    std::cerr << libErrorSyntax << "quantum_usec should be non-negative." << std::endl;
     return -1;
 }
 
@@ -125,15 +218,21 @@ int uthread_init(int quantum_usecs)
  * On failure, return -1.
 */
 int uthread_spawn(void (*f)()){
-    int newTid = manager.createThread(f);
-
-    if(newTid != -1){
-        scheduler.appendTid(newTid);
-        return newTid;
+    maskSignals();
+    int newTid = manager->createThread(f);
+    if (newTid == sysError) // a sys error occurred in thread setup in manager
+    {
+        clearMem();
+        exit(1);
     }
-
-    std::cerr <<  LIB_ERROR_SYNTAX << "Number of threads > MAX_THREAD_NUMBER." << std::endl;
-    return  -1;
+    else if(newTid == -1){
+        std::cerr <<  libErrorSyntax << "Number of threads > MAX_THREAD_NUMBER." << std::endl;
+        unmaskSignals();
+        return  -1;
+    }
+    scheduler->addThread(newTid);
+    unmaskSignals();
+    return newTid;
 }
 
 
@@ -150,31 +249,31 @@ int uthread_spawn(void (*f)()){
 */
 int uthread_terminate(int tid)
 {
-    int currRunning = scheduler.getRunning();
+    maskSignals();
+    int currRunning = scheduler->getRunning();
     int nextToRun;
 
     if(tid != 0)
     {
-        if (manager.killThread(tid) != -1)                        //If thread exists.
+        if (manager->killThread(tid) != -1)                        //If thread exists.
         {
-            nextToRun = scheduler.whosNextTermination(tid);
+            nextToRun = scheduler->whosNextTermination(tid);
             if(nextToRun != currRunning){                          // If we should do a context switch.
-                if (vTimer.zero() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
-                    exit(1);
-                }
-                // manager.switch(nextToRun)
-                if(vTimer.start() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-                    exit(1);
+                if(vTimer->start() < 0){
+                    exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
+                manager->switchContext(currRunning, nextToRun);
             }
+            unmaskSignals();
             return 0;
         }
-        std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+        std::cerr <<  libErrorSyntax << "Thread doesn't exit." << std::endl;
+        unmaskSignals();
         return -1;
     }
+    clearMem();
+    unmaskSignals();
     exit(0);
 }
 
@@ -190,29 +289,30 @@ int uthread_terminate(int tid)
 */
 int uthread_block(int tid)
 {
-    int currRunning = scheduler.getRunning();
+    maskSignals();
+    int currRunning = scheduler->getRunning();
     int nextToRun;
 
     if (tid != 0)
     {
-        if(manager.blockThread(tid) != -1){                 // If thread exists.
-            nextToRun = scheduler.whosNextBlock(tid);
+        if(manager->blockThread(tid) != -1){                 // If thread exists.
+            nextToRun = scheduler->whosNextBlock(tid);
             if(nextToRun != currRunning){                   // If we should do a context switch.
-                if (vTimer.zero() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to zero _timer." << std::endl;
-                    exit(1);
-                }
-                //manager.switch(nextToRun);
-                if(vTimer.start() < 0){
-                    std::cerr << SYS_ERROR_SYNTAX << "Failed to start _timer." << std::endl;
-                    exit(1);
+                if(vTimer->start() < 0){
+                    exitProg("Failed to start _timer.");
                 }
                 totalQuants++;
+                manager->switchContext(currRunning, nextToRun);
             }
+            unmaskSignals();
+            return 0;
         }
-        std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+        std::cerr <<  libErrorSyntax << "Thread doesn't exit." << std::endl;
+        unmaskSignals();
+        return -1;
     }
-    std::cerr <<  LIB_ERROR_SYNTAX << "Blocking the main thread is forbidden." << std::endl;
+    std::cerr <<  libErrorSyntax << "Blocking the main thread is forbidden." << std::endl;
+    unmaskSignals();
     return -1;
 }
 
@@ -226,14 +326,17 @@ int uthread_block(int tid)
 */
 int uthread_resume(int tid)
 {
-    if (manager.unBlockThread(tid) != -1)
+    maskSignals();
+    if (manager->unBlockThread(tid) != -1)
     {
-        if((tid != scheduler.getRunning()) && !(scheduler.inReady(tid))){
-            scheduler.appendTid(tid);
-        }
-        return 0;
+       if(!manager->isThreadAsleep(tid)){
+           scheduler->addThread(tid);
+       }
+       unmaskSignals();
+       return 0;
     }
-    std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+    std::cerr <<  libErrorSyntax << "Thread doesn't exit." << std::endl;
+    unmaskSignals();
     return -1;
 }
 
@@ -245,16 +348,45 @@ int uthread_resume(int tid)
  * should be made.
  * Return value: On success, return 0. On failure, return -1.
 */
-int uthread_sleep(int usec)
+int uthread_sleep(unsigned int usec)
 {
-    int currTid = scheduler.getRunning();
-    if (currTid != 0)
-    {
-        manager.putThreadToSleep(currTid);
-        //TODO: scheduling decision.
+    maskSignals();
+    int runningThreadTid = scheduler->getRunning();
+    wake_up_info* oldFirstToWake = sleepingThreads->peek(); // NULL if the list is empty.
+
+    if(runningThreadTid != 0){ // You can't put to sleep the main process.
+
+        // Updating the sleeping threads list:
+        timeval t = calcWakUpTimeval(usec);
+        sleepingThreads->add(runningThreadTid, t);
+
+        // Reset timer:
+        wake_up_info* newFirstToWake = sleepingThreads->peek();
+        if(oldFirstToWake == nullptr) {
+            // If the list was empty before, the added thread is surly the head, and we should reset the timer:
+            rTimer->start(usec);
+        } else {
+            // If the head of the list was changed, we should update the timer according to the new head:
+            if(oldFirstToWake->id != newFirstToWake->id){
+                rTimer->start(usec);
+            }
+        }
+
+        // Now we update the manager and scheduler that the thread is sleeping:
+        manager->putThreadToSleep(runningThreadTid);
+        int nextToRun = scheduler->whosNextSleep();
+
+        // And do a context-switch:
+        if(vTimer->start() < 0){
+            exitProg("Failed to start _timer.");
+        }
+        totalQuants++;
+        manager->switchContext(runningThreadTid, nextToRun);
+        unmaskSignals();
         return 0;
     }
-    //TODO: print Error- putting main thread to sleep.
+    std::cerr <<  libErrorSyntax << "The main thread can't sleep." << std::endl;
+    unmaskSignals();
     return -1;
 }
 
@@ -264,7 +396,11 @@ int uthread_sleep(int usec)
 */
 int uthread_get_tid()
 {
-    return scheduler.getRunning();
+    maskSignals();
+    int retVal = scheduler->getRunning();
+    unmaskSignals();
+
+    return retVal;
 }
 
 
@@ -294,11 +430,14 @@ int uthread_get_total_quantums()
 */
 int uthread_get_quantums(int tid)
 {
-    int threadQuants = manager.getThreadQuants(tid);
+    maskSignals();
+    int threadQuants = manager->getThreadQuants(tid);
     if (threadQuants != -1)  // If thread exists.
     {
+        unmaskSignals();
         return threadQuants;
     }
-    std::cerr <<  LIB_ERROR_SYNTAX << "Thread doesn't exit." << std::endl;
+    std::cerr <<  libErrorSyntax << "Thread doesn't exit." << std::endl;
+    unmaskSignals();
     return -1;
 }

@@ -1,5 +1,6 @@
-#ifndef OSEX2_UTHREADS_H
-#define OSEX2_UTHREADS_H
+#ifndef _UTHREADS_H
+#define _UTHREADS_H
+
 /*
  * User-Level Threads Library (uthreads)
  * Author: OS, os@cs.huji.ac.il
@@ -62,22 +63,21 @@ int uthread_block(int tid);
 
 /*
  * Description: This function resumes a blocked thread with ID tid and moves
- * it to the READY state if it's not synced. Resuming a thread in a RUNNING or READY state
+ * it to the READY state. Resuming a thread in a RUNNING or READY state
  * has no effect and is not considered as an error. If no thread with
  * ID tid exists it is considered an error.
  * Return value: On success, return 0. On failure, return -1.
 */
 int uthread_resume(int tid);
 
-
 /*
- * Description: This function blocks the RUNNING thread for user specified micro-seconds (virtual time).
- * It is considered an error if the main thread (tid==0) calls this function.
- * Immediately after the RUNNING thread transitions to the BLOCKED state a scheduling decision
- * should be made.
+ * Description: This function blocks the RUNNING thread for usecs micro-seconds in real time (not virtual
+ * time on the cpu). It is considered an error if the main thread (tid==0) calls this function. Immediately after
+ * the RUNNING thread transitions to the BLOCKED state a scheduling decision should be made.
+ * After the sleeping time is over, the thread should go back to the end of the READY threads list.
  * Return value: On success, return 0. On failure, return -1.
 */
-int uthread_sleep(int usec);
+int uthread_sleep(unsigned int usec);
 
 
 /*
@@ -110,5 +110,5 @@ int uthread_get_total_quantums();
 */
 int uthread_get_quantums(int tid);
 
+#endif
 
-#endif //OSEX2_UTHREADS_H

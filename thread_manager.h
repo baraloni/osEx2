@@ -1,171 +1,134 @@
+
+
 #ifndef OSEX2_HANDLER_H
 #define OSEX2_HANDLER_H
 
+#include <cassert>
+
+//data structures:
 #include <queue>
 #include <unordered_map>
+#include <cassert>
+
+//context switch handling:
+#include <setjmp.h>
+#include <signal.h>
+#include <unistd.h>
+#include <sys/time.h>
+
+//classes:
 #include "thread.h"
+
 
 class thread_manager
 {
-    int _maxThreadNum; //TODO static?
+    int _maxThreadNum;
     int _stackSize;
     int _quantumUsecs;
-
     int _largestId;
     std::priority_queue<int, std::vector<int>, std::greater<int>> _usedIds;
-
     std::unordered_map<int, thread*> _threads;
 
+
     /**
-     * checks if the supplied tid represents an existing thread.
-     * @param tid representing a tid to search for
-     * @return the address of the thread whose tid is the supplied one.
-     * if no such thread exists, returns nullptr.
-     */
-    thread *exists(const int tid) const
-    {
-        auto threadAndTid = _threads.find(tid);
-        if ( threadAndTid != _threads.end())
-        {
-            return &(_threads.find(tid)->second);
-        }
-        return nullptr;
-    }
+    * checks if the supplied tid represents an existing thread.
+    * @param tid the tid to search by.
+    * @return the address of the thread whose tid is the supplied one.
+    * if no such thread exists, returns nullptr.
+    */
+    thread *findThread(int tid);
 
     /**
      * handles the tid assignments.
      * @return the smallest tid available for assignment.
      */
-    int getSmallestTid()
-    {
-        if (!_usedIds.empty())
-        {
-            int smallestId = _usedIds.top();
-            _usedIds.pop();
-            return smallestId;
-        }
-        ++_largestId;
-        return _largestId;
-    }
+    int getSmallestTid();
 
 
 public:
 
     /** constructs a thread_manager object*/
-    thread_manager(const int quantum_usecs, const int maxThreadNum,
-                   const int stackSize):_maxThreadNum(maxThreadNum),_stackSize(stackSize),
-                                        _quantumUsecs(quantum_usecs), _largestId(0), _usedIds(), _threads(){}
+    thread_manager(int quantum_usecs, int maxThreadNum,
+                   int stackSize);
 
-    typedef unsigned int address_t;
-
-    /**
-     *
-     * @param f
-     * @return
-     */
-    int createThread(void (*f)()) //TODO: help
-    {
-        if (_threads.size() < _maxThreadNum)
-        {
-            int newTid = getSmallestTid();
-            thread newThread = thread();
-
-
-
-            _threads.insert({getSmallestTid(), &newThread});
-        }
-        return -1;
-
-    }
+    /** destructs this thread_manager object*/
+    ~thread_manager();
 
     /**
-     * deletes the thread with the supplied tid, if exists.
-     * @param tid
-     * @return -1 if a thread of the supplied tid does not exist, 0 if it exists and erased successfully.
+     * initializes the thread_manager object: creates representation of main thread.
+     * @return 0 on success, prints error and returns -2 on system fail.
      */
-    int killThread(const int tid)
-    {
-        thread *threadWithTid = exists(tid);
-        if (threadWithTid != nullptr)
-        {
-            _threads.erase(tid); // TODO: should cause the element's destruction & stack?
-            _usedIds.push(tid); //recycles this tid.
-            return 0;
-        }
-        return -1;
-    }
+    int threadManagerSetup();
 
-    int blockThread(const int tid)
-    {
-        thread *threadWithTid = exists(tid);
-        if (threadWithTid != nullptr)
-        {
-            threadWithTid->setBlocked(true);
-            return 0;
-        }
-        return -1;
-    }
+    /**
+     * Creates a new thread object.
+     * @param f : The function the thread should execute.
+     * @return the new thread's tid, a non negative int.
+      * -1 if the new thread could not be created.
+      * prints an error and returns -2 if a system error occurred.
+     */
+    int createThread(void (*f)());
 
-    int unBlockThread(const int tid)
-    {
-        thread *threadWithTid = exists(tid);
-        if (threadWithTid != nullptr)
-        {
-            threadWithTid->setBlocked(false);
-            return 0;
-        }
-        return -1;
-    }
+    /**
+    * deletes the thread with the supplied tid, if exists.
+    * @param tid: the tid of the thread we want to delete.
+    * @return -1 if a thread of the supplied tid does not exist,
+    *         0 if exists and erased successfully.
+    */
+    int killThread(int tid);
 
-    bool isThreadBlocked(const int tid) //TODO: needed for scheduling (in case of of thread that is asleep and blocked)
-    {
-        thread *threadWithTid = exists(tid);
-        if (threadWithTid != nullptr)
-        {
-            return threadWithTid->getBlocked();
-        }
-        return -1;
-    }
+    /**
+    * @param tid: the tid of the thread we want to block.
+    * @return 0 if the thread exists and we succeed on blocking it,
+    * -1 if it does not exist.
+    */
+    int blockThread(int tid);
 
-    void putThreadToSleep(const int tid)
+    /**
+     * @param tid: the tid of the thread we want to unblock.
+     * @return 0 if the thread exists and we succeed on unblocking it,
+     * -1 if it does not exist.
+     */
+    int unBlockThread(int tid);
 
-    {
-        //no need to check for existence-
-        // made only on the running (and therefore existing) thread.
-        thread *threadWithTid = exists(tid);
-        threadWithTid->setSleep(true);
-    }
+    /**
+     * @param tid: the tid of the thread we want to check if is block.
+     * @return true is it exists and blocked, false otherwise.
+     */
+    bool isThreadBlocked(int tid);
 
-    int wakeThread(const int tid) //TODO: needed fot uthred_sleep when the timer ends
-    {
-        //no need to check for existence-
-        // we make use of that when the timer of an existing thread ends.
-        thread *threadWithTid = exists(tid);
-        threadWithTid->setSleep(false);
-    }
+    /**
+     * cause the thread with the supplied tid (if exists) to sleep.
+     * @param tid: the tid of the thread we want to put to sleep.
+     */
+    void putThreadToSleep(int tid);
 
-    bool isThreadAsleep(const int tid) //TODO: needed for scheduling (in case of of thread that is asleep and blocked)
-    {
-        thread *threadWithTid = exists(tid);
-        if (threadWithTid != nullptr)
-        {
-            return threadWithTid->getSleep();
-        }
-        return -1;
-    }
+    /**
+     * @param tid: the tid of the thread we want to wake.
+     * @return 0 if the thread exists and we succeed on waking it,
+     * -1 if it does not exist.
+     */
+    int wakeThread(int tid);
 
+    /**
+     * @param tid: the tid of the thread we want to check if asleep.
+     * @return true if the thread with tid exists and asleep, false otherwise.
+     */
+    bool isThreadAsleep(int tid);
 
-    int getThreadQuants(const int tid){
-        thread *threadWithTid = exists(tid);
-        if (threadWithTid != nullptr)
-        {
-            return threadWithTid->getQuants();
-        }
-        return -1;
-    }
+    /**
+     * @param tid: the tid of a thread.
+     * @return the num of quants of the thread of the supplied tid is exists,
+     * -1 otherwise.
+     */
+    int getThreadQuants(int tid);
 
-    int SwitchContext(){}
+    /**
+     * switches the context of the
+     * @param currTid : the tid of the thread we want to switch from
+     * @param nextTid : the tid of the thread we want to switch to.
+     */
+    void switchContext(int currTid, int nextTid);
 };
-
 
 #endif //OSEX2_HANDLER_H

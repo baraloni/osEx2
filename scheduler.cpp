@@ -1,10 +1,6 @@
-// TODO: Should we put find in a try catch block?
-//TODO: delete inReady
-// TODO: delete appendTid
 
-#include <iostream>
 //#define NDEBUG
-#include <cassert>
+#include <csignal>
 #include "scheduler.h"
 
 /*------------- CONSTRUCTORS ------------*/
@@ -55,26 +51,18 @@ int scheduler::whosNextSleep() {
 
 
 void scheduler::addThread(int tid) {
+
     // If tid is not already in _ready or _running, add it to the end of _ready:
     auto findIter = std::find(_ready.begin(), _ready.end(), tid);
-    if((tid != _running) && (findIter==_ready.end())){
+    if((tid != _running) && (findIter ==_ready.end())){
         _ready.push_back(tid);
     }
+
 }
 
 void scheduler::printReady() {
-    for(std::__1::__list_iterator<int, void *>::value_type & iter : _ready){
+    for(auto & iter : _ready){
         std::cout << iter << "; ";
     }
     std::cout << std::endl;
-}
-
-
-// TO REMOVE:
-bool scheduler::inReady(int tid) {
-    return false;
-}
-
-void scheduler::appendTid(int tid) {
-    _ready.push_back(tid);
 }

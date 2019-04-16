@@ -1,7 +1,10 @@
+
 #ifndef TEMPEX2_SCHEDULER_H
 #define TEMPEX2_SCHEDULER_H
-
+#include <iostream>
 #include <list>
+#include <algorithm>
+#include <cassert>
 
 static const int MAIN_THREAD_ID = 0;
 
@@ -77,15 +80,6 @@ public:
     */
     void printReady();
 
-    // TO DELETE:
-    void appendTid(int tid);
-
-    /**
-     * Returns true if the thread with this tid is in _ready.
-     * @param tid
-     * @return
-     */
-    bool inReady(int tid);
 };
 
 

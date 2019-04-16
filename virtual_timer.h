@@ -1,11 +1,6 @@
-//
-// Created by Jonathan Weiss on 2019-04-05.
-//
-
 #ifndef EX2_VIRTUAL_TIMER_H
 #define EX2_VIRTUAL_TIMER_H
 
-static const int CONVERTION_CONST_MSEC_SEC = 1000000;
 #include <sys/time.h>
 
 class virtual_timer {
@@ -14,7 +9,7 @@ class virtual_timer {
 
 public:
     /**
-     * Creates a virtual timer.
+     * Creates a virtual timer that counts a quantum each time.
      * @param quantum: The number of micro seconds the timer should count.
      */
     explicit virtual_timer(int quantum);
@@ -24,11 +19,6 @@ public:
      * @return -1 in case of a system error.
      */
     int start();
-
-    /**
-     * Zeros the timer.
-     */
-    int zero();
 };
 
 
